@@ -16,7 +16,7 @@ jobs:
       id: get-repos
       run: |
         # Get list of all repositories in your organization/user account
-        repos=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+        repos=$(curl -s -H "Authorization: token ${{ secrets.GITHUBTOKEN }}" \
           "https://api.github.com/manishbad/repos?per_page=100" | jq -r '.[].clone_url')
         echo "repos=${repos}" >> $GITHUB_OUTPUT
 
