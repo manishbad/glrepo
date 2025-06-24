@@ -1,0 +1,54 @@
+name: Gitleaks Scan
+on:
+  schedule:
+    - cron: '0 0 * * *' # Daily at midnight
+  workflow_dispatch: # Allow manual triggers
+  repository_dispatch: # Trigger when new repos are added
+
+jobs:
+  scan-repos:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Get all repositories
+      id: get-repos
+      run: |
+        # Get list of all repositories in your organization/user account
+        repos=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/manishbad/repos?per_page=100" | jq -r '.[].clone_url')
+        echo "repos=${repos}" >> $GITHUB_OUTPUT
+
+    - name: Run Gitleaks on each repo
+      run: |
+        for repo in ${{ steps.get-repos.outputs.repos }}; do
+          repo_name=$(echo $repo | awk -F'/' '{print $NF}' | sed 's/.git$//')
+          echo "Scanning $repo_name..."
+
+          # Clone the repository
+          git clone --depth 1 $repo $repo_name
+
+          # Run gitleaks
+          docker run --rm -v $(pwd)/$repo_name:/path \
+            zricethezav/gitleaks:latest detect --source="/path" --report-format=json --report-path=./$repo_name-report.json || true
+
+          # Process results
+          if [ -f "$repo_name-report.json" ]; then
+            findings=$(jq length $repo_name-report.json)
+            echo "Found $findings potential leaks in $repo_name"
+
+            # Send email if findings > 0
+            if [ "$findings" -gt 0 ]; then
+              echo "Sending email alert..."
+              # Use sendmail or other email service
+              echo "Subject: Gitleaks Alert for $repo_name" > email.txt
+              echo "Found $findings potential secrets in $repo_name:" >> email.txt
+              jq . $repo_name-report.json >> email.txt
+              sendmail recipient@example.com < email.txt
+            fi
+          fi
+
+          # Cleanup
+          rm -rf $repo_name
+        done
